@@ -152,6 +152,18 @@ async def set_user_plan(email: str, plan: str,
     return result.endswith("1")
 
 
+async def insert_quality_score(base_report_id, kind: str, score: float,
+                               details: list) -> None:
+    """Day 5: 결정론 품질 점수 영속 (컴플라이언스 위반은 로그로도 즉시 가시화)."""
+    await pool().execute(
+        """
+        INSERT INTO quality_scores (base_report_id, kind, score, details)
+        VALUES ($1, $2, $3, $4::jsonb)
+        """,
+        base_report_id, kind, score, json.dumps(details, ensure_ascii=False),
+    )
+
+
 async def count_paid_usage_24h(user_id) -> int:
     """쿼터 분모: 최근 24h '유료' 호출(캐시미스)만 — 캐시 히트는 한계비용≈0이라 미과금."""
     return await pool().fetchval(

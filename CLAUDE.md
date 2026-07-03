@@ -33,7 +33,20 @@ make smoke TICKER=NVDA          # 한 번 더 → cache_hit=True 확인
 make smoke-thesis TICKER=NVDA THESIS="..."
 ```
 
-## 현재 단계: Day 4 완료 (Day 5 = Langfuse 평가)
+## 현재 단계: Day 5 완료 (Day 6 = 배포)
+
+- [x] Day 5 품질 평가(결정론, LLM 무관·항상 실행): `app/quality.py` —
+  ① compliance: 매수/매도/목표가 지시·권유 고정밀 패턴(서술 용법 '순매수·매수세'는
+  무고 처리, 오탐 0·미탐 0 검증) ② grounding: 리포트 source_url이 리서치 노트에
+  실재하는지(환각 출처 검출 검증). quality_scores 테이블 영속 + 위반 즉시 로그.
+- [x] Day 5 Langfuse(4.x, OTel): `app/llm/tracing.py` — research/structured/compress
+  3 호출 generation 관측 + 품질 점수 create_score(session_id=base_report_id 그룹핑).
+  키 없으면 완전 no-op, 죽은 호스트/가짜 키도 요청 경로 미차단 실증(fail-open).
+- [x] Day 5 에러 분류: 라우터 _classify — LLM 레이트리밋→429, 상류 5xx/연결→503,
+  DB→503, 기타→502 (재시도 판단 근거를 클라이언트에).
+- Langfuse 실서버 연동(계정 필요)만 미검증 — 키 넣으면 자동 활성.
+
+## 이전 단계 완료 기록 (Day 4)
 
 - [x] Day 4 인증: POST /v1/signup(이메일→API 키, sha256 해시만 저장) + X-API-Key
   의존성. AUTH_REQUIRED=false(기본)면 익명 허용 — 로컬 dev/smoke 무영향.

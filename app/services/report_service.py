@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from app import auth, db
+from app import auth, db, quality
 from app.config import settings
 from app.llm import client as llm
 from app.llm import prompts
@@ -82,6 +82,16 @@ async def get_or_create_base_report(ticker: str, user=None) -> tuple[BaseReport,
     )
     await db.record_usage(ticker, "base_report", False, total_in, total_out, searches, user_id=user_id)
 
+    # Day 5: 결정론 품질 채점 (컴플라이언스=버그 게이트·출처 grounding). fail-open이되
+    # 위반은 즉시 로그 — "매수/매도 표현이 출력에 등장하면 버그로 취급"(CLAUDE.md).
+    try:
+        scores = await quality.score_report(base_report_id, report.model_dump(), research.text)
+        if scores["compliance"] < 1.0 or scores["grounding"] < 1.0:
+            print(f"⚠ quality: {ticker} compliance={scores['compliance']} "
+                  f"grounding={scores['grounding']:.2f} — quality_scores 참조")
+    except Exception as e:
+        print(f"⚠ quality 채점 실패(발행은 진행): {e}")
+
     meta = CostMeta(cache_hit=False, input_tokens=total_in,
                     output_tokens=total_out, web_searches=searches)
     return report, compressed_text or research.text, base_report_id, meta
@@ -138,5 +148,13 @@ async def evaluate_thesis(report: BaseReport, research_notes: str,
                                 result.model_dump(), total_in, total_out,
                                 user_id=user_id)
     await db.record_usage(report.ticker, "thesis_eval", False, total_in, total_out, 0, user_id=user_id)
+
+    # Day 5: 평가문 컴플라이언스 채점 (fail-open)
+    try:
+        scores = await quality.score_eval(base_report_id, result.model_dump())
+        if scores["compliance"] < 1.0:
+            print(f"⚠ quality: {report.ticker} eval compliance 위반 — quality_scores 참조")
+    except Exception as e:
+        print(f"⚠ quality 채점 실패(발행은 진행): {e}")
 
     return result, CostMeta(cache_hit=False, input_tokens=total_in, output_tokens=total_out)

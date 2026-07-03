@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from anthropic import AsyncAnthropic
 
 from app.config import settings
+from app.llm import tracing
 
 client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
@@ -61,6 +62,7 @@ def _extract_text(message) -> str:
 
 async def research(system: str, user: str) -> LLMResult:
     """Phase A: 웹 검색 동반 리서치. 자유 텍스트 노트 반환."""
+    g = tracing.gen("research", settings.report_model, user[:200])
     usage = LLMUsage()
     message = await client.messages.create(
         model=settings.report_model,
@@ -85,7 +87,10 @@ async def research(system: str, user: str) -> LLMResult:
             tools=[WEB_SEARCH_TOOL],
         )
         usage.add(message.usage)
-    return LLMResult(text=_extract_text(message), usage=usage)
+    text = _extract_text(message)
+    g.done(text[:300], usage.input_tokens, usage.output_tokens,
+           {"web_searches": usage.web_searches})
+    return LLMResult(text=text, usage=usage)
 
 
 async def structured(model: str, system: str, user: str, schema: dict,
@@ -96,6 +101,7 @@ async def structured(model: str, system: str, user: str, schema: dict,
     (Unterminated string). Fable 5는 내부 추론이 max_tokens를 선소비하므로
     산출물 예상 크기의 1.5~2배 이상 여유 필수. 상한이라 미사용분 과금 없음.
     """
+    g = tracing.gen("structured", model, user[:200])
     usage = LLMUsage()
     kwargs = dict(
         model=model,
@@ -114,7 +120,9 @@ async def structured(model: str, system: str, user: str, schema: dict,
         # 절단된 JSON은 하류에서 알 수 없는 파싱 에러로 표출 → 여기서 명확히 실패
         raise RuntimeError(
             f"structured() 출력이 max_tokens({max_tokens})에서 절단됨 — 상향 필요")
-    return LLMResult(text=_extract_text(message), usage=usage)
+    text = _extract_text(message)
+    g.done(text[:300], usage.input_tokens, usage.output_tokens)
+    return LLMResult(text=text, usage=usage)
 
 
 async def compress(system: str, text: str, max_tokens: int = 4000) -> LLMResult:
@@ -123,6 +131,7 @@ async def compress(system: str, text: str, max_tokens: int = 4000) -> LLMResult:
     논거 평가마다 반복 투입되는 research_notes 컨텍스트를 1회 압축해 두면
     평가 호출 입력 토큰이 줄어든다(압축 1회 비용 < 평가 반복 절감 누적).
     """
+    g = tracing.gen("compress", settings.prep_model, f"notes {len(text):,}자")
     usage = LLMUsage()
     message = await client.messages.create(
         model=settings.prep_model,
@@ -133,7 +142,9 @@ async def compress(system: str, text: str, max_tokens: int = 4000) -> LLMResult:
     usage.add(message.usage)
     if message.stop_reason == "max_tokens":
         raise RuntimeError(f"compress() 출력이 max_tokens({max_tokens})에서 절단됨")
-    return LLMResult(text=_extract_text(message), usage=usage)
+    out = _extract_text(message)
+    g.done(f"{len(out):,}자", usage.input_tokens, usage.output_tokens)
+    return LLMResult(text=out, usage=usage)
 
 
 def parse_json(text: str) -> dict:

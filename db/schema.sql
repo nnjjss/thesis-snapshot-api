@@ -54,6 +54,21 @@ CREATE INDEX IF NOT EXISTS idx_thesis_evals_cache
     ON thesis_evals (base_report_id, md5(thesis_text));
 
 -- ---------------------------------------------------------------
+-- Day 5: 결정론 품질 점수 (컴플라이언스·grounding — LLM 없이 항상 채점)
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS quality_scores (
+    id              BIGSERIAL PRIMARY KEY,
+    base_report_id  UUID NOT NULL REFERENCES base_reports(id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL,           -- report_compliance | report_grounding | eval_compliance
+    score           REAL NOT NULL,           -- 1.0=클린. compliance는 게이트(0/1), grounding은 비율
+    details         JSONB,                   -- 위반/누락 목록
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quality_scores_report
+    ON quality_scores (base_report_id, kind, created_at DESC);
+
+-- ---------------------------------------------------------------
 -- 사용자 & 사용량 (Day 4 Stripe 연동 시 확장)
 -- ---------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
