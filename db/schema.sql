@@ -1,7 +1,12 @@
 -- Thesis Snapshot API — PostgreSQL schema (Day 1)
 -- 실행: psql $DATABASE_URL -f db/schema.sql
 
-CREATE EXTENSION IF NOT EXISTS vector;      -- pgvector (v2: BGE-M3 임베딩용, Day 1에는 미사용)
+-- pgvector (v2: BGE-M3 임베딩용, 현재 미사용) — 호스팅 Postgres에 없을 수 있어 관용 처리(Day 6 Railway)
+DO $$ BEGIN
+    CREATE EXTENSION IF NOT EXISTS vector;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pgvector 미가용 — v2 임베딩 전까지 무영향';
+END $$;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;    -- gen_random_uuid()
 
 -- ---------------------------------------------------------------

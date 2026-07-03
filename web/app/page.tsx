@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { apiUrl } from "@/lib/api";
 import AccountBox, { getStoredApiKey } from "@/components/AccountBox";
 import EvalView from "@/components/EvalView";
 import ReportView from "@/components/ReportView";
@@ -21,7 +22,7 @@ export default function Home() {
     setData(null);
     try {
       const apiKey = getStoredApiKey();
-      const res = await fetch("/api/backend/v1/reports", {
+      const res = await fetch(await apiUrl("/v1/reports"), {
         method: "POST",
         headers: {
           "content-type": "application/json",

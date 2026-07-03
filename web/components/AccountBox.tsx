@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiUrl } from "@/lib/api";
 
 const KEY_STORAGE = "thesis_api_key";
 const EMAIL_STORAGE = "thesis_email";
@@ -31,7 +32,7 @@ export default function AccountBox() {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/backend/v1/signup", {
+      const res = await fetch(await apiUrl("/v1/signup"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
@@ -53,7 +54,7 @@ export default function AccountBox() {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/backend/v1/billing/checkout", {
+      const res = await fetch(await apiUrl("/v1/billing/checkout"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
