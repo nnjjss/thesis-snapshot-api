@@ -33,7 +33,16 @@ make smoke TICKER=NVDA          # 한 번 더 → cache_hit=True 확인
 make smoke-thesis TICKER=NVDA THESIS="..."
 ```
 
-## 현재 단계: Day 2 완료 (Day 3 = Next.js 대시보드)
+## 현재 단계: Day 3 완료 (Day 4 = Stripe)
+
+- [x] Day 3: Next.js 16 대시보드(`web/`, App Router+Tailwind) — 티커/논거 폼 →
+  리포트(강세/약세 카드·confidence 배지·출처 링크) + 논거 검증(verdict 배지·
+  supporting/contradicting 카드 하이라이트) + disclaimer 상시 노출.
+  백엔드는 next.config rewrites 프록시(/api/backend/* → :8000, CORS 불필요,
+  배포 시 BACKEND_URL env). 실행: `make dev` + `make web-dev`.
+  타입은 lib/types.ts가 Pydantic 미러(단일 소스는 백엔드).
+
+## 이전 단계 완료 기록
 
 - [x] Day 1: smoke 한국어 리포트·cache_hit=True·원가 기록(캐시미스 $1.62)
 - [x] Day 2 캐시 정교화: schema_version 캐시 태깅 / thesis_evals 캐시(같은 리포트+같은 논거 재평가 = $0) / compress 사용량 별도 kind 기록

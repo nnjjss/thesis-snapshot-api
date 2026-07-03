@@ -16,3 +16,10 @@ smoke:
 # 사용: make smoke-thesis TICKER=NVDA THESIS="데이터센터 수요로 계속 상승한다"
 smoke-thesis:
 	python -m scripts.smoke_test $(TICKER) --thesis "$(THESIS)"
+
+# Day 3: Next.js 대시보드 (백엔드 make dev와 함께 띄울 것)
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
