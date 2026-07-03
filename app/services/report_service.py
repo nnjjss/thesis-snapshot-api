@@ -16,20 +16,25 @@ from app import db
 from app.config import settings
 from app.llm import client as llm
 from app.llm import prompts
-from app.models import (BaseReport, CostMeta, ThesisEval, ThesisStruct,
-                        strict_schema)
+from app.models import (REPORT_SCHEMA_VERSION, BaseReport, CostMeta,
+                        ThesisEval, ThesisStruct, strict_schema)
 
 
 async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, object, CostMeta]:
-    """returns (report, research_notes, base_report_id, meta)"""
-    ticker = ticker.upper()
+    """returns (report, eval_context_notes, base_report_id, meta)
 
-    cached = await db.get_cached_base_report(ticker)
+    두 번째 반환값은 '논거 평가용 컨텍스트' — Day 2부터 Haiku 압축본이 있으면
+    압축본(평가 1회당 절감 > 압축 1회 비용, 손익분기 0.8회 실측), 없으면 원본.
+    """
+    ticker = ticker.strip().upper()
+
+    cached = await db.get_cached_base_report(ticker, REPORT_SCHEMA_VERSION)
     if cached:
         report = BaseReport.model_validate_json(cached["report"])
         meta = CostMeta(cache_hit=True)
         await db.record_usage(ticker, "base_report", True, 0, 0, 0)
-        return report, cached["research_notes"] or "", cached["id"], meta
+        notes = cached["research_notes_compressed"] or cached["research_notes"] or ""
+        return report, notes, cached["id"], meta
 
     # --- Phase A: 리서치 (Fable 5 + web search) ---
     research = await llm.research(
@@ -46,6 +51,20 @@ async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, objec
     )
     report = BaseReport.model_validate(llm.parse_json(structured.text))
 
+    # --- Day 2: 노트 압축 (Haiku, fail-open — 실패해도 리포트 생성은 진행) ---
+    compressed_text = None
+    try:
+        comp = await llm.compress(prompts.COMPRESS_SYSTEM, research.text)
+        # prep_model(Haiku) 호출이라 Fable 단가인 base_report와 섞지 않고 별도 kind로 기록
+        await db.record_usage(ticker, "compress", False,
+                              comp.usage.input_tokens, comp.usage.output_tokens, 0)
+        # 효과 가드: Haiku가 비결정적으로 압축에 실패(재포맷으로 오히려 팽창)하는
+        # 케이스 실측(3,730→3,740자) — 원본의 90% 미만으로 줄었을 때만 채택
+        if len(comp.text) < 0.9 * len(research.text):
+            compressed_text = comp.text
+    except Exception:
+        pass  # 압축은 최적화일 뿐 — 평가는 원본 노트로 fail-open
+
     total_in = research.usage.input_tokens + structured.usage.input_tokens
     total_out = research.usage.output_tokens + structured.usage.output_tokens
     searches = research.usage.web_searches
@@ -54,23 +73,34 @@ async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, objec
         ticker=ticker, as_of=report.as_of, report=report.model_dump(),
         research_notes=research.text, model=settings.report_model,
         input_tokens=total_in, output_tokens=total_out, web_searches=searches,
+        schema_version=REPORT_SCHEMA_VERSION,
+        research_notes_compressed=compressed_text,
     )
     await db.record_usage(ticker, "base_report", False, total_in, total_out, searches)
 
     meta = CostMeta(cache_hit=False, input_tokens=total_in,
                     output_tokens=total_out, web_searches=searches)
-    return report, research.text, base_report_id, meta
+    return report, compressed_text or research.text, base_report_id, meta
 
 
 async def evaluate_thesis(report: BaseReport, research_notes: str,
                           base_report_id, thesis_text: str) -> tuple[ThesisEval, CostMeta]:
+    thesis_text = thesis_text.strip()
+
+    # 0) Day 2: 동일 리포트+동일 논거 재평가 캐시 (base_report_id 종속이라 리포트 갱신 시 자연 무효화)
+    cached = await db.get_cached_thesis_eval(base_report_id, thesis_text)
+    if cached:
+        result = ThesisEval.model_validate_json(cached["evaluation"])
+        await db.record_usage(report.ticker, "thesis_eval", True, 0, 0, 0)
+        return result, CostMeta(cache_hit=True)
+
     # 1) Haiku 전처리: 논거 → claims/assumptions/horizon
     prep = await llm.structured(
         model=settings.prep_model,
         system=prompts.THESIS_STRUCT_SYSTEM,
         user=thesis_text,
         schema=strict_schema(ThesisStruct),
-        max_tokens=1000,
+        max_tokens=4000,  # Haiku(비추론)라 위험 낮지만 절단 클래스 동일 — 여유 상한
     )
     thesis_struct = llm.parse_json(prep.text)
 
@@ -85,7 +115,8 @@ async def evaluate_thesis(report: BaseReport, research_notes: str,
             thesis_struct_json=json.dumps(thesis_struct, ensure_ascii=False),
         ),
         schema=strict_schema(ThesisEval),
-        max_tokens=2000,
+        # max_tokens 기본(16000) 사용 — 2000 오버라이드는 Fable 내부추론 선소비로
+        # 논거에 따라 절단됨(실측: "중국 수출 규제" 논거서 재현). 상한이라 과금 무관.
     )
     result = ThesisEval.model_validate(llm.parse_json(evaluation.text))
 

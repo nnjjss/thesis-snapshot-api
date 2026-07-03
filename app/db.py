@@ -33,35 +33,53 @@ def pool() -> asyncpg.Pool:
 # ------------------------------------------------------------------
 # base_reports 캐시
 # ------------------------------------------------------------------
-async def get_cached_base_report(ticker: str) -> Optional[asyncpg.Record]:
+async def get_cached_base_report(ticker: str, schema_version: int) -> Optional[asyncpg.Record]:
+    # schema_version 필터(Day 2): 형태가 다른 옛 캐시 행이 새 Pydantic 파싱을 깨지 않게
     ttl = timedelta(hours=settings.cache_ttl_hours)
     return await pool().fetchrow(
         """
-        SELECT id, report, research_notes, created_at
+        SELECT id, report, research_notes, research_notes_compressed, created_at
         FROM base_reports
         WHERE ticker = $1 AND created_at > now() - $2::interval
+          AND schema_version = $3
         ORDER BY created_at DESC
         LIMIT 1
         """,
-        ticker, ttl,
+        ticker, ttl, schema_version,
     )
 
 
 async def insert_base_report(ticker: str, as_of: str, report: dict,
                              research_notes: str, model: str,
                              input_tokens: int, output_tokens: int,
-                             web_searches: int):
+                             web_searches: int, schema_version: int,
+                             research_notes_compressed: Optional[str] = None):
     return await pool().fetchval(
         """
         INSERT INTO base_reports
-            (ticker, as_of, report, research_notes, model,
-             input_tokens, output_tokens, web_searches)
-        VALUES ($1, $2::date, $3::jsonb, $4, $5, $6, $7, $8)
+            (ticker, as_of, report, research_notes, research_notes_compressed,
+             model, schema_version, input_tokens, output_tokens, web_searches)
+        VALUES ($1, $2::date, $3::jsonb, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id
         """,
         # asyncpg는 date 파라미터에 str 자동 캐스팅을 안 함(::date가 있어도 바인딩은 파이썬 타입 기준)
         ticker, date.fromisoformat(as_of), json.dumps(report, ensure_ascii=False),
-        research_notes, model, input_tokens, output_tokens, web_searches,
+        research_notes, research_notes_compressed, model, schema_version,
+        input_tokens, output_tokens, web_searches,
+    )
+
+
+async def get_cached_thesis_eval(base_report_id, thesis_text: str) -> Optional[asyncpg.Record]:
+    """동일 리포트+동일 논거의 기존 평가 — base_report_id가 리포트 세대에 종속이라
+    리포트가 갱신되면(새 id) 자연 무효화됨. 별도 TTL 불필요."""
+    return await pool().fetchrow(
+        """
+        SELECT evaluation FROM thesis_evals
+        WHERE base_report_id = $1 AND md5(thesis_text) = md5($2) AND thesis_text = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        base_report_id, thesis_text,
     )
 
 

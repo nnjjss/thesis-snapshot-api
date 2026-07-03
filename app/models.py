@@ -18,6 +18,11 @@ DISCLAIMER_KO = (
     "모든 투자 판단과 그 결과에 대한 책임은 투자자 본인에게 있습니다."
 )
 
+# 캐시 무효화 태그(Day 2): BaseReport의 JSON *형태*가 하위호환 깨지게 바뀌면 +1.
+# 캐시 조회가 이 값으로 필터하므로, 옛 형태의 캐시 행이 새 Pydantic 파싱을
+# 깨뜨리는 사고를 구조적으로 차단한다(형태 불변 변경—description 등—은 올리지 않음).
+REPORT_SCHEMA_VERSION = 1
+
 
 class Confidence(str, Enum):
     high = "high"

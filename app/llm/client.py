@@ -117,6 +117,25 @@ async def structured(model: str, system: str, user: str, schema: dict,
     return LLMResult(text=_extract_text(message), usage=usage)
 
 
+async def compress(system: str, text: str, max_tokens: int = 4000) -> LLMResult:
+    """리서치 노트 압축(Day 2): prep_model(Haiku)로 자유 텍스트 → 압축 텍스트.
+
+    논거 평가마다 반복 투입되는 research_notes 컨텍스트를 1회 압축해 두면
+    평가 호출 입력 토큰이 줄어든다(압축 1회 비용 < 평가 반복 절감 누적).
+    """
+    usage = LLMUsage()
+    message = await client.messages.create(
+        model=settings.prep_model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": text}],
+    )
+    usage.add(message.usage)
+    if message.stop_reason == "max_tokens":
+        raise RuntimeError(f"compress() 출력이 max_tokens({max_tokens})에서 절단됨")
+    return LLMResult(text=_extract_text(message), usage=usage)
+
+
 def parse_json(text: str) -> dict:
     """구조화 출력은 스키마가 보장되지만, 방어적으로 코드펜스 제거 후 파싱."""
     cleaned = text.strip()

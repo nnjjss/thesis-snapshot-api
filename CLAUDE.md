@@ -33,11 +33,12 @@ make smoke TICKER=NVDA          # 한 번 더 → cache_hit=True 확인
 make smoke-thesis TICKER=NVDA THESIS="..."
 ```
 
-## 현재 단계: Day 1 완료 기준
+## 현재 단계: Day 2 완료 (Day 3 = Next.js 대시보드)
 
-- [ ] `make smoke TICKER=NVDA` → 한국어 JSON 리포트 출력
-- [ ] 두 번째 실행에서 cache_hit=True
-- [ ] scripts/smoke_test.py의 토큰 단가 상수를 실제 가격으로 갱신, 원가 1건 기록
+- [x] Day 1: smoke 한국어 리포트·cache_hit=True·원가 기록(캐시미스 $1.62)
+- [x] Day 2 캐시 정교화: schema_version 캐시 태깅 / thesis_evals 캐시(같은 리포트+같은 논거 재평가 = $0) / compress 사용량 별도 kind 기록
+- [x] Day 2 Haiku 압축: 실험(scripts/compress_experiment.py) → 손익분기 0.8회로 배선. **효과 가드 필수** — Haiku가 비결정적으로 압축 실패(팽창)하는 케이스 실측, 원본 90% 미만일 때만 채택
+- [x] 부수 수정: 평가 호출 max_tokens=2000 절단 버그(Fable 내부추론 선소비 — 명시 오버라이드가 기본 상향을 우회하고 있었음)
 
 ## 로드맵 (초안 문서 참조)
 
