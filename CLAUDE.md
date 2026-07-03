@@ -33,7 +33,21 @@ make smoke TICKER=NVDA          # 한 번 더 → cache_hit=True 확인
 make smoke-thesis TICKER=NVDA THESIS="..."
 ```
 
-## 현재 단계: Day 3 완료 (Day 4 = Stripe)
+## 현재 단계: Day 4 완료 (Day 5 = Langfuse 평가)
+
+- [x] Day 4 인증: POST /v1/signup(이메일→API 키, sha256 해시만 저장) + X-API-Key
+  의존성. AUTH_REQUIRED=false(기본)면 익명 허용 — 로컬 dev/smoke 무영향.
+- [x] Day 4 쿼터: free 플랜 24h 신규 생성(캐시미스) 10건 — LLM 호출 '전' 차단(429),
+  캐시 히트는 무제한(한계비용≈0 단위경제 원칙). pro 무제한.
+- [x] Day 4 Stripe: /v1/billing/checkout(구독, 미설정 시 503) + /v1/billing/webhook
+  (서명 검증→plan 전환: completed→pro, subscription.deleted→free).
+  ⚠ stripe v15 함정: StripeObject는 .get() 없음(KeyError:'get') — 서명만
+  WebhookSignature.verify_header로 검증하고 데이터는 원문 JSON dict로 접근.
+- [x] 대시보드 AccountBox: 무료 키 발급/localStorage 저장/X-API-Key 자동 첨부/
+  Pro 업그레이드(checkout 리다이렉트).
+- Stripe 실키 연동(계정 필요)만 미검증 — 키 넣고 checkout→웹훅 E2E 1회 돌릴 것.
+
+## 이전 단계 완료 기록 (Day 3)
 
 - [x] Day 3: Next.js 16 대시보드(`web/`, App Router+Tailwind) — 티커/논거 폼 →
   리포트(강세/약세 카드·confidence 배지·출처 링크) + 논거 검증(verdict 배지·

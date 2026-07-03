@@ -8,3 +8,7 @@ asyncpg>=0.29
 
 # 선택: Langfuse 트레이싱 (Day 5)
 # langfuse>=2.50
+
+# Day 4: 결제·인증
+stripe>=10
+email-validator>=2          # pydantic EmailStr

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from app import db
+from app import auth, db
 from app.config import settings
 from app.llm import client as llm
 from app.llm import prompts
@@ -20,21 +20,25 @@ from app.models import (REPORT_SCHEMA_VERSION, BaseReport, CostMeta,
                         ThesisEval, ThesisStruct, strict_schema)
 
 
-async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, object, CostMeta]:
+async def get_or_create_base_report(ticker: str, user=None) -> tuple[BaseReport, str, object, CostMeta]:
     """returns (report, eval_context_notes, base_report_id, meta)
 
     두 번째 반환값은 '논거 평가용 컨텍스트' — Day 2부터 Haiku 압축본이 있으면
     압축본(평가 1회당 절감 > 압축 1회 비용, 손익분기 0.8회 실측), 없으면 원본.
+    user(Day 4): 쿼터는 캐시 미스(유료 호출) 직전에만 검사 — 캐시 히트는 무제한 정책.
     """
     ticker = ticker.strip().upper()
+    user_id = user["id"] if user else None
 
     cached = await db.get_cached_base_report(ticker, REPORT_SCHEMA_VERSION)
     if cached:
         report = BaseReport.model_validate_json(cached["report"])
         meta = CostMeta(cache_hit=True)
-        await db.record_usage(ticker, "base_report", True, 0, 0, 0)
+        await db.record_usage(ticker, "base_report", True, 0, 0, 0, user_id=user_id)
         notes = cached["research_notes_compressed"] or cached["research_notes"] or ""
         return report, notes, cached["id"], meta
+
+    await auth.enforce_quota(user)  # 유료 경로 진입 직전 (free 24h 상한, 초과 시 429)
 
     # --- Phase A: 리서치 (Fable 5 + web search) ---
     research = await llm.research(
@@ -76,7 +80,7 @@ async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, objec
         schema_version=REPORT_SCHEMA_VERSION,
         research_notes_compressed=compressed_text,
     )
-    await db.record_usage(ticker, "base_report", False, total_in, total_out, searches)
+    await db.record_usage(ticker, "base_report", False, total_in, total_out, searches, user_id=user_id)
 
     meta = CostMeta(cache_hit=False, input_tokens=total_in,
                     output_tokens=total_out, web_searches=searches)
@@ -84,15 +88,18 @@ async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, objec
 
 
 async def evaluate_thesis(report: BaseReport, research_notes: str,
-                          base_report_id, thesis_text: str) -> tuple[ThesisEval, CostMeta]:
+                          base_report_id, thesis_text: str, user=None) -> tuple[ThesisEval, CostMeta]:
     thesis_text = thesis_text.strip()
+    user_id = user["id"] if user else None
 
     # 0) Day 2: 동일 리포트+동일 논거 재평가 캐시 (base_report_id 종속이라 리포트 갱신 시 자연 무효화)
     cached = await db.get_cached_thesis_eval(base_report_id, thesis_text)
     if cached:
         result = ThesisEval.model_validate_json(cached["evaluation"])
-        await db.record_usage(report.ticker, "thesis_eval", True, 0, 0, 0)
+        await db.record_usage(report.ticker, "thesis_eval", True, 0, 0, 0, user_id=user_id)
         return result, CostMeta(cache_hit=True)
+
+    await auth.enforce_quota(user)  # 평가도 유료 경로(캐시 미스) 직전에만 검사
 
     # 1) Haiku 전처리: 논거 → claims/assumptions/horizon
     prep = await llm.structured(
@@ -128,7 +135,8 @@ async def evaluate_thesis(report: BaseReport, research_notes: str,
     total_out = prep.usage.output_tokens + evaluation.usage.output_tokens
 
     await db.insert_thesis_eval(base_report_id, thesis_text, thesis_struct,
-                                result.model_dump(), total_in, total_out)
-    await db.record_usage(report.ticker, "thesis_eval", False, total_in, total_out, 0)
+                                result.model_dump(), total_in, total_out,
+                                user_id=user_id)
+    await db.record_usage(report.ticker, "thesis_eval", False, total_in, total_out, 0, user_id=user_id)
 
     return result, CostMeta(cache_hit=False, input_tokens=total_in, output_tokens=total_out)

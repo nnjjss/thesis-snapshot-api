@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     cache_ttl_hours: int = 24
     max_web_searches: int = 6
 
+    # Day 4: 인증·쿼터·Stripe
+    auth_required: bool = False       # True면 /v1/reports에 X-API-Key 필수 (로컬 dev/smoke는 off)
+    free_daily_limit: int = 10        # free 플랜: 최근 24h 유료 호출(캐시미스) 상한. 캐시 히트는 무제한(한계비용≈0)
+    stripe_secret_key: str = ""       # sk_test_... — 없으면 결제 엔드포인트 503
+    stripe_price_id: str = ""         # pro 구독 Price ID (price_...)
+    stripe_webhook_secret: str = ""   # whsec_... — 웹훅 서명 검증용
+    app_base_url: str = "http://localhost:3200"  # checkout 성공/취소 리다이렉트 대상
+
     # Langfuse (선택 — 키 없으면 트레이싱 자동 비활성)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

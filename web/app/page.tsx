@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AccountBox, { getStoredApiKey } from "@/components/AccountBox";
 import EvalView from "@/components/EvalView";
 import ReportView from "@/components/ReportView";
 import type { ReportResponse } from "@/lib/types";
@@ -19,9 +20,13 @@ export default function Home() {
     setError(null);
     setData(null);
     try {
+      const apiKey = getStoredApiKey();
       const res = await fetch("/api/backend/v1/reports", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(apiKey ? { "X-API-Key": apiKey } : {}),
+        },
         body: JSON.stringify({
           ticker: ticker.trim().toUpperCase(),
           thesis: thesis.trim() || null,
@@ -47,6 +52,8 @@ export default function Home() {
           미국 티커의 강세/약세 논거 리포트 — 내 투자 논거가 최신 데이터로 버티는지 검증합니다.
         </p>
       </header>
+
+      <AccountBox />
 
       <form onSubmit={submit} className="mb-8 space-y-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex gap-3">

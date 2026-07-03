@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import db
-from app.routers import reports
+from app.routers import billing, reports, users
 
 
 @asynccontextmanager
@@ -24,6 +24,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(reports.router)
+app.include_router(users.router)
+app.include_router(billing.router)
 
 
 @app.get("/health")

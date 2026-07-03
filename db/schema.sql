@@ -61,8 +61,15 @@ CREATE TABLE IF NOT EXISTS users (
     email           TEXT UNIQUE NOT NULL,
     plan            TEXT NOT NULL DEFAULT 'free',   -- free | pro
     stripe_customer_id TEXT,
+    api_key_hash    TEXT UNIQUE,                    -- Day 4: sha256(api_key). 원문 미저장(발급 시 1회 노출)
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Day 4 멱등 마이그레이션
+ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key_hash TEXT UNIQUE;
+-- 쿼터 집계(사용자별 최근 24h 유료 호출 수) 조회용
+CREATE INDEX IF NOT EXISTS idx_usage_events_quota
+    ON usage_events (user_id, created_at DESC) WHERE cache_hit = FALSE;
 
 CREATE TABLE IF NOT EXISTS usage_events (
     id              BIGSERIAL PRIMARY KEY,

@@ -85,29 +85,80 @@ async def get_cached_thesis_eval(base_report_id, thesis_text: str) -> Optional[a
 
 async def insert_thesis_eval(base_report_id, thesis_text: str,
                              thesis_struct: dict, evaluation: dict,
-                             input_tokens: int, output_tokens: int) -> None:
+                             input_tokens: int, output_tokens: int,
+                             user_id=None) -> None:
     await pool().execute(
         """
         INSERT INTO thesis_evals
             (base_report_id, thesis_text, thesis_struct, evaluation,
-             input_tokens, output_tokens)
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
+             input_tokens, output_tokens, user_id)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7)
         """,
         base_report_id, thesis_text,
         json.dumps(thesis_struct, ensure_ascii=False),
         json.dumps(evaluation, ensure_ascii=False),
-        input_tokens, output_tokens,
+        input_tokens, output_tokens, user_id,
     )
 
 
 async def record_usage(ticker: str, kind: str, cache_hit: bool,
                        input_tokens: int, output_tokens: int,
-                       web_searches: int) -> None:
+                       web_searches: int, user_id=None) -> None:
     await pool().execute(
         """
         INSERT INTO usage_events
-            (ticker, kind, cache_hit, input_tokens, output_tokens, web_searches)
-        VALUES ($1, $2, $3, $4, $5, $6)
+            (ticker, kind, cache_hit, input_tokens, output_tokens, web_searches, user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         """,
-        ticker, kind, cache_hit, input_tokens, output_tokens, web_searches,
+        ticker, kind, cache_hit, input_tokens, output_tokens, web_searches, user_id,
+    )
+
+
+# ------------------------------------------------------------------
+# Day 4: 사용자·플랜·쿼터
+# ------------------------------------------------------------------
+async def create_user(email: str, api_key_hash: str) -> Optional[asyncpg.Record]:
+    """가입(멱등 아님 — 이메일 중복 시 None). 키 원문은 저장하지 않는다."""
+    try:
+        return await pool().fetchrow(
+            """
+            INSERT INTO users (email, api_key_hash) VALUES ($1, $2)
+            RETURNING id, email, plan
+            """,
+            email, api_key_hash,
+        )
+    except asyncpg.UniqueViolationError:
+        return None
+
+
+async def get_user_by_key_hash(api_key_hash: str) -> Optional[asyncpg.Record]:
+    return await pool().fetchrow(
+        "SELECT id, email, plan, stripe_customer_id FROM users WHERE api_key_hash = $1",
+        api_key_hash,
+    )
+
+
+async def set_user_plan(email: str, plan: str,
+                        stripe_customer_id: Optional[str] = None) -> bool:
+    """웹훅에서 호출 — Stripe checkout의 customer_email 기준으로 플랜 전환."""
+    result = await pool().execute(
+        """
+        UPDATE users SET plan = $2,
+               stripe_customer_id = COALESCE($3, stripe_customer_id)
+        WHERE email = $1
+        """,
+        email, plan, stripe_customer_id,
+    )
+    return result.endswith("1")
+
+
+async def count_paid_usage_24h(user_id) -> int:
+    """쿼터 분모: 최근 24h '유료' 호출(캐시미스)만 — 캐시 히트는 한계비용≈0이라 미과금."""
+    return await pool().fetchval(
+        """
+        SELECT count(*) FROM usage_events
+        WHERE user_id = $1 AND cache_hit = FALSE
+          AND created_at > now() - interval '24 hours'
+        """,
+        user_id,
     )
