@@ -1,0 +1,103 @@
+"""리포트 생성 파이프라인.
+
+get_or_create_base_report:
+    캐시 히트  → DB의 JSON 그대로 반환 (한계비용 ≈ 0)
+    캐시 미스  → Phase A(리서치, web search) → Phase B(구조화) → 캐시 저장
+
+evaluate_thesis:
+    Haiku 전처리(논거 구조화) → Fable 5 평가 (캐시된 리포트+노트를 컨텍스트로)
+"""
+from __future__ import annotations
+
+import json
+from datetime import date
+
+from app import db
+from app.config import settings
+from app.llm import client as llm
+from app.llm import prompts
+from app.models import (BaseReport, CostMeta, ThesisEval, ThesisStruct,
+                        strict_schema)
+
+
+async def get_or_create_base_report(ticker: str) -> tuple[BaseReport, str, object, CostMeta]:
+    """returns (report, research_notes, base_report_id, meta)"""
+    ticker = ticker.upper()
+
+    cached = await db.get_cached_base_report(ticker)
+    if cached:
+        report = BaseReport.model_validate_json(cached["report"])
+        meta = CostMeta(cache_hit=True)
+        await db.record_usage(ticker, "base_report", True, 0, 0, 0)
+        return report, cached["research_notes"] or "", cached["id"], meta
+
+    # --- Phase A: 리서치 (Fable 5 + web search) ---
+    research = await llm.research(
+        system=prompts.RESEARCH_SYSTEM.format(today=date.today().isoformat()),
+        user=prompts.research_user_prompt(ticker),
+    )
+
+    # --- Phase B: 구조화 (JSON Schema 강제) ---
+    structured = await llm.structured(
+        model=settings.report_model,
+        system=prompts.STRUCTURE_SYSTEM,
+        user=prompts.structure_user_prompt(ticker, research.text),
+        schema=strict_schema(BaseReport),
+    )
+    report = BaseReport.model_validate(llm.parse_json(structured.text))
+
+    total_in = research.usage.input_tokens + structured.usage.input_tokens
+    total_out = research.usage.output_tokens + structured.usage.output_tokens
+    searches = research.usage.web_searches
+
+    base_report_id = await db.insert_base_report(
+        ticker=ticker, as_of=report.as_of, report=report.model_dump(),
+        research_notes=research.text, model=settings.report_model,
+        input_tokens=total_in, output_tokens=total_out, web_searches=searches,
+    )
+    await db.record_usage(ticker, "base_report", False, total_in, total_out, searches)
+
+    meta = CostMeta(cache_hit=False, input_tokens=total_in,
+                    output_tokens=total_out, web_searches=searches)
+    return report, research.text, base_report_id, meta
+
+
+async def evaluate_thesis(report: BaseReport, research_notes: str,
+                          base_report_id, thesis_text: str) -> tuple[ThesisEval, CostMeta]:
+    # 1) Haiku 전처리: 논거 → claims/assumptions/horizon
+    prep = await llm.structured(
+        model=settings.prep_model,
+        system=prompts.THESIS_STRUCT_SYSTEM,
+        user=thesis_text,
+        schema=strict_schema(ThesisStruct),
+        max_tokens=1000,
+    )
+    thesis_struct = llm.parse_json(prep.text)
+
+    # 2) Fable 5 평가 — 캐시된 리포트/노트가 컨텍스트라 짧고 저렴한 호출
+    evaluation = await llm.structured(
+        model=settings.report_model,
+        system=prompts.THESIS_EVAL_SYSTEM,
+        user=prompts.thesis_eval_user_prompt(
+            base_report_json=json.dumps(report.model_dump(), ensure_ascii=False),
+            research_notes=research_notes,
+            thesis_text=thesis_text,
+            thesis_struct_json=json.dumps(thesis_struct, ensure_ascii=False),
+        ),
+        schema=strict_schema(ThesisEval),
+        max_tokens=2000,
+    )
+    result = ThesisEval.model_validate(llm.parse_json(evaluation.text))
+
+    # 인덱스 범위 검증 (스키마는 형태만 보장, 의미는 여기서 방어)
+    result.supporting = [i for i in result.supporting if 0 <= i < len(report.bull_case)]
+    result.contradicting = [i for i in result.contradicting if 0 <= i < len(report.bear_case)]
+
+    total_in = prep.usage.input_tokens + evaluation.usage.input_tokens
+    total_out = prep.usage.output_tokens + evaluation.usage.output_tokens
+
+    await db.insert_thesis_eval(base_report_id, thesis_text, thesis_struct,
+                                result.model_dump(), total_in, total_out)
+    await db.record_usage(report.ticker, "thesis_eval", False, total_in, total_out, 0)
+
+    return result, CostMeta(cache_hit=False, input_tokens=total_in, output_tokens=total_out)

@@ -1,0 +1,10 @@
+# 구조화 출력(output_config)은 최신 SDK 필요 — 설치 시 최신 버전 유지 권장
+anthropic>=0.69
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+asyncpg>=0.29
+
+# 선택: Langfuse 트레이싱 (Day 5)
+# langfuse>=2.50
