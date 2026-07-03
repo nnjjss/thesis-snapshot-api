@@ -33,7 +33,21 @@ make smoke TICKER=NVDA          # 한 번 더 → cache_hit=True 확인
 make smoke-thesis TICKER=NVDA THESIS="..."
 ```
 
-## 현재 단계: Day 5 완료 (Day 6 = 배포)
+## 현재 단계: Day 6 완료 (Day 7 = 채널 공개)
+
+- [x] Day 6 Railway 배포(프로젝트 thesis-snapshot): backend+Postgres+web.
+  웹 https://web-production-b0a48.up.railway.app /
+  API https://backend-production-d867.up.railway.app (AUTH_REQUIRED=true).
+- 배포 함정(전부 실측): ① Procfile은 Railpack이 YAML 파싱 — 값 따옴표 필수
+  ② 공개 엣지는 IPv4(0.0.0.0 바인드) — `::` 단일 바인드 시 502
+  ③ 도메인 생성 시 -p 포트 명시(미지정 Target port '-' → 502)
+  ④ 모노레포 서브디렉터리는 `railway up <dir> --path-as-root`
+  ⑤ NEXT_PUBLIC_* 빌드타임 인라인 미동작 → /api/config 런타임 컨피그로 해소
+  ⑥ Next rewrites 프록시가 장시간(1~2분) 요청 절단 → 브라우저가 백엔드
+  직접 호출(CORS allow_origins=[앱 도메인]).
+- Stripe/Langfuse 키는 아직 미설정(각각 503 graceful/no-op) — Day 7 전 주입.
+
+## 이전 단계 완료 기록 (Day 5)
 
 - [x] Day 5 품질 평가(결정론, LLM 무관·항상 실행): `app/quality.py` —
   ① compliance: 매수/매도/목표가 지시·권유 고정밀 패턴(서술 용법 '순매수·매수세'는
