@@ -164,6 +164,17 @@ async def insert_quality_score(base_report_id, kind: str, score: float,
     )
 
 
+async def count_global_paid_usage_24h() -> int:
+    """Day 7: 전체 서비스 24h 유료 호출 — 글로벌 서킷브레이커 분모(사용자 무관)."""
+    return await pool().fetchval(
+        """
+        SELECT count(*) FROM usage_events
+        WHERE cache_hit = FALSE AND kind IN ('base_report', 'thesis_eval')
+          AND created_at > now() - interval '24 hours'
+        """,
+    )
+
+
 async def count_paid_usage_24h(user_id) -> int:
     """쿼터 분모: 최근 24h '유료' 호출(캐시미스)만 — 캐시 히트는 한계비용≈0이라 미과금."""
     return await pool().fetchval(

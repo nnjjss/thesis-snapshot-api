@@ -44,11 +44,20 @@ async def resolve_user(x_api_key: Optional[str] = Header(default=None)):
 
 
 async def enforce_quota(user) -> None:
-    """유료 호출(캐시미스) 발생 '전' 호출 — free 플랜 24h 상한 검사.
+    """유료 호출(캐시미스) 발생 '전' 호출 — 글로벌 서킷브레이커 + free 플랜 24h 상한.
 
     주의: 리포트 캐시 히트 경로에서는 부르지 않는다(캐시는 무제한이 정책).
-    익명(user=None)은 auth_required=False 로컬 모드뿐이므로 쿼터 미적용.
+    익명(user=None)은 auth_required=False 로컬 모드뿐이므로 개인 쿼터 미적용.
     """
+    # Day 7: 글로벌 일일 상한 — 플랜 무관, 비용 폭주 최후 방어선(캐시미스 1건≈$1.6).
+    # 초과 시 503(서비스 용량)이지 사용자 잘못(429)이 아님 — 캐시 조회는 계속 동작.
+    total = await db.count_global_paid_usage_24h()
+    if total >= settings.global_daily_paid_limit:
+        raise HTTPException(
+            status_code=503,
+            detail="오늘의 신규 생성 용량이 소진되었습니다 — 캐시된 리포트 조회는 계속 가능합니다. 내일 다시 시도해 주세요.",
+        )
+
     if user is None or user["plan"] == "pro":
         return
     used = await db.count_paid_usage_24h(user["id"])
@@ -58,3 +67,21 @@ async def enforce_quota(user) -> None:
             detail=f"free 플랜 24시간 상한({settings.free_daily_limit}건) 초과 — "
                    "캐시된 리포트 조회는 계속 무료입니다. Pro 업그레이드: POST /v1/billing/checkout",
         )
+
+
+# Day 7: signup IP 레이트리밋 — 이메일 무한 생성으로 free 쿼터를 우회하는 벡터 차단.
+# 단일 인스턴스 전제의 in-memory 슬라이딩 윈도우(현 배포 구조와 일치). 다중 인스턴스 시 Redis 전환.
+_signup_hits: dict[str, list[float]] = {}
+
+
+def check_signup_rate(ip: str) -> None:
+    import time
+    now = time.time()
+    window = [t for t in _signup_hits.get(ip, []) if now - t < 3600]
+    if len(window) >= settings.signup_rate_limit_per_hour:
+        raise HTTPException(status_code=429, detail="가입 시도가 너무 잦습니다 — 1시간 후 다시 시도해 주세요.")
+    window.append(now)
+    _signup_hits[ip] = window
+    if len(_signup_hits) > 10_000:  # 무한 성장 방지(오래된 IP 정리)
+        for k in [k for k, v in _signup_hits.items() if all(now - t >= 3600 for t in v)]:
+            del _signup_hits[k]

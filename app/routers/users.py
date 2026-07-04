@@ -1,5 +1,5 @@
-"""Day 4: 가입 — 이메일 → API 키 발급 (free 플랜)."""
-from fastapi import APIRouter, HTTPException
+"""Day 4: 가입 — 이메일 → API 키 발급 (free 플랜). Day 7: IP 레이트리밋."""
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from app import auth, db
@@ -18,7 +18,11 @@ class SignupResponse(BaseModel):
 
 
 @router.post("/signup", response_model=SignupResponse)
-async def signup(req: SignupRequest) -> SignupResponse:
+async def signup(req: SignupRequest, request: Request) -> SignupResponse:
+    # Day 7: IP 레이트리밋 — Railway 뒤라 클라이언트 IP는 X-Forwarded-For 첫 값
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() \
+        or (request.client.host if request.client else "unknown")
+    auth.check_signup_rate(ip)
     key, key_hash = auth.new_api_key()
     user = await db.create_user(req.email.lower(), key_hash)
     if user is None:

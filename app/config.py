@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # Day 4: 인증·쿼터·Stripe
     auth_required: bool = False       # True면 /v1/reports에 X-API-Key 필수 (로컬 dev/smoke는 off)
     free_daily_limit: int = 10        # free 플랜: 최근 24h 유료 호출(캐시미스) 상한. 캐시 히트는 무제한(한계비용≈0)
+
+    # Day 7: 공개 런치 가드
+    signup_rate_limit_per_hour: int = 5   # IP당 시간당 가입 상한(이메일 무한 생성=쿼터 우회 차단)
+    global_daily_paid_limit: int = 50     # 전체 서비스 24h 유료 호출(캐시미스) 상한 — 비용 폭주 최후 방어선(캐시미스 1건≈$1.6)
     stripe_secret_key: str = ""       # sk_test_... — 없으면 결제 엔드포인트 503
     stripe_price_id: str = ""         # pro 구독 Price ID (price_...)
     stripe_webhook_secret: str = ""   # whsec_... — 웹훅 서명 검증용

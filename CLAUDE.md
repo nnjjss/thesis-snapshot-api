@@ -33,7 +33,15 @@ make smoke TICKER=NVDA          # 한 번 더 → cache_hit=True 확인
 make smoke-thesis TICKER=NVDA THESIS="..."
 ```
 
-## 현재 단계: Day 6 완료 (Day 7 = 채널 공개)
+## 현재 단계: Day 7 완료 — 7일 빌드 종료, 공개 준비 완료
+
+- [x] Day 7 런치 가드: ① signup IP 레이트리밋(시간당 5회, in-memory 슬라이딩 윈도우 —
+  이메일 무한 생성=쿼터 우회 차단) ② 글로벌 일일 유료호출 서킷브레이커
+  (GLOBAL_DAILY_PAID_LIMIT=50 ≈ $80/일 상한, 초과 시 503·캐시 조회는 계속) — 둘 다 검증.
+- [x] 공개용 README(라이브 URL·차별점·API 예시·요금) + docs/launch-post.md(게시 초안+체크리스트).
+- 게시는 사용자 액션: launch-post.md 다듬어 채널 게시. Stripe/Langfuse 키도 사용자 주입 대기.
+
+## 이전 단계 완료 기록 (Day 6)
 
 - [x] Day 6 Railway 배포(프로젝트 thesis-snapshot): backend+Postgres+web.
   웹 https://web-production-b0a48.up.railway.app /
