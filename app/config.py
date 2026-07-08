@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://thesis:thesis@localhost:5433/thesis"
 
     # 모델 라우팅 — 비용/품질 실험 시 env로 교체
-    report_model: str = "claude-fable-5"            # 리서치 + 구조화 + 논거 평가
+    report_model: str = "claude-fable-5"            # 리서치 + 논거 평가 (추론 품질 핵심)
+    structure_model: str = "claude-sonnet-4-6"      # Phase B 구조화 — 노트→JSON 재배열(창작 금지)라
+    #   추론 불필요, Sonnet($3/$15)로 ~$0.27/미스 절감. A/B 검증(2026-07-08): grounding·컴플라이언스
+    #   게이트 동등 통과 조건부 적용 — 품질 저하 관측 시 STRUCTURE_MODEL=claude-fable-5로 원복
     prep_model: str = "claude-haiku-4-5-20251001"   # 논거 전처리 (저비용)
 
     cache_ttl_hours: int = 24

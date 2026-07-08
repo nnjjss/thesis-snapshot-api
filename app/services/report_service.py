@@ -46,9 +46,9 @@ async def get_or_create_base_report(ticker: str, user=None) -> tuple[BaseReport,
         user=prompts.research_user_prompt(ticker),
     )
 
-    # --- Phase B: 구조화 (JSON Schema 강제) ---
+    # --- Phase B: 구조화 (JSON Schema 강제) — structure_model(Sonnet, 비용 레버 2026-07-08) ---
     structured = await llm.structured(
-        model=settings.report_model,
+        model=settings.structure_model,
         system=prompts.STRUCTURE_SYSTEM,
         user=prompts.structure_user_prompt(ticker, research.text),
         schema=strict_schema(BaseReport),

@@ -36,10 +36,14 @@ class LLMUsage:
     input_tokens: int = 0
     output_tokens: int = 0
     web_searches: int = 0
+    cache_read_tokens: int = 0      # 절감 검증용: 캐시에서 읽힌 입력(0.1x 과금)
+    cache_write_tokens: int = 0     # 캐시 기록 입력(1.25x 과금)
 
     def add(self, usage) -> None:
         self.input_tokens += getattr(usage, "input_tokens", 0) or 0
         self.output_tokens += getattr(usage, "output_tokens", 0) or 0
+        self.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+        self.cache_write_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
         stu = getattr(usage, "server_tool_use", None)
         if stu is not None:
             self.web_searches += getattr(stu, "web_search_requests", 0) or 0
@@ -61,7 +65,12 @@ def _extract_text(message) -> str:
 
 
 async def research(system: str, user: str) -> LLMResult:
-    """Phase A: 웹 검색 동반 리서치. 자유 텍스트 노트 반환."""
+    """Phase A: 웹 검색 동반 리서치. 자유 텍스트 노트 반환.
+
+    ⚠ cache_control 적용 금지(2026-07-08 실측 원복): 이 워크로드는 티커마다 검색결과가
+    새로워 요청 간 재사용이 없고, 요청 내 재읽기도 미미(read=write의 7%) — 쓰기 할증
+    1.25x가 우세해 순비용 +12%. usage.cache_* 계측 필드로 재검증 가능.
+    """
     g = tracing.gen("research", settings.report_model, user[:200])
     usage = LLMUsage()
     message = await client.messages.create(
@@ -89,7 +98,8 @@ async def research(system: str, user: str) -> LLMResult:
         usage.add(message.usage)
     text = _extract_text(message)
     g.done(text[:300], usage.input_tokens, usage.output_tokens,
-           {"web_searches": usage.web_searches})
+           {"web_searches": usage.web_searches,
+            "cache_read": usage.cache_read_tokens, "cache_write": usage.cache_write_tokens})
     return LLMResult(text=text, usage=usage)
 
 
